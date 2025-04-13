@@ -1,9 +1,11 @@
+use lazy_static::lazy_static;
+use regex::Regex;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 use thiserror::Error;
-use regex::Regex;
-use lazy_static::lazy_static;
+
+pub use crate::moves::types::CycleId;
 
 #[derive(Debug, Error)]
 pub enum TsplibError {
@@ -30,7 +32,8 @@ pub struct TsplibInstance {
     pub dimension: usize,
     pub edge_weight_type: EdgeWeightType,
     pub coordinates: Vec<(f64, f64)>,
-    distances: Vec<Vec<i32>>, // Changed to i32 as per task requirements
+    distances: Vec<Vec<i32>>,
+    nearest_neighbors: Vec<Vec<usize>>,
 }
 
 impl TsplibInstance {
@@ -65,10 +68,12 @@ impl TsplibInstance {
 
             if in_node_coord_section {
                 if let Some(caps) = NODE_COORD_RE.captures(line) {
-                    let x = caps[2].parse::<f64>()
-                        .map_err(|e| TsplibError::Parse(format!("Failed to parse x coordinate: {}", e)))?;
-                    let y = caps[3].parse::<f64>()
-                        .map_err(|e| TsplibError::Parse(format!("Failed to parse y coordinate: {}", e)))?;
+                    let x = caps[2].parse::<f64>().map_err(|e| {
+                        TsplibError::Parse(format!("Failed to parse x coordinate: {}", e))
+                    })?;
+                    let y = caps[3].parse::<f64>().map_err(|e| {
+                        TsplibError::Parse(format!("Failed to parse y coordinate: {}", e))
+                    })?;
                     coordinates.push((x, y));
                 } else {
                     in_node_coord_section = false;
@@ -80,8 +85,9 @@ impl TsplibInstance {
                 match key.as_str() {
                     "NAME" => name = value,
                     "DIMENSION" => {
-                        dimension = value.parse()
-                            .map_err(|e| TsplibError::Parse(format!("Failed to parse dimension: {}", e)))?;
+                        dimension = value.parse().map_err(|e| {
+                            TsplibError::Parse(format!("Failed to parse dimension: {}", e))
+                        })?;
                     }
                     "EDGE_WEIGHT_TYPE" => {
                         edge_weight_type = Some(match value.as_str() {
@@ -90,16 +96,21 @@ impl TsplibInstance {
                             "CEIL_2D" => EdgeWeightType::Ceil2D,
                             "GEO" => EdgeWeightType::Geo,
                             "ATT" => EdgeWeightType::Att,
-                            _ => return Err(TsplibError::Format(format!("Unsupported EDGE_WEIGHT_TYPE: {}", value))),
+                            _ => {
+                                return Err(TsplibError::Format(format!(
+                                    "Unsupported EDGE_WEIGHT_TYPE: {}",
+                                    value
+                                )));
+                            }
                         });
                     }
-                    _ => {} // Ignore other keywords for now
+                    _ => {}
                 }
             }
         }
 
-        let edge_weight_type = edge_weight_type.ok_or_else(|| 
-            TsplibError::Format("Missing EDGE_WEIGHT_TYPE".to_string()))?;
+        let edge_weight_type = edge_weight_type
+            .ok_or_else(|| TsplibError::Format("Missing EDGE_WEIGHT_TYPE".to_string()))?;
 
         if coordinates.is_empty() {
             return Err(TsplibError::Format("No coordinates found".to_string()));
@@ -113,19 +124,18 @@ impl TsplibInstance {
             )));
         }
 
-        // Calculate distance matrix
         let mut instance = Self {
             name,
             dimension,
             edge_weight_type,
             coordinates,
             distances: vec![vec![0; dimension]; dimension],
+            nearest_neighbors: vec![Vec::new(); dimension],
         };
         instance.calculate_distance_matrix();
         Ok(instance)
     }
 
-    // Calculate and store the complete distance matrix
     fn calculate_distance_matrix(&mut self) {
         for i in 0..self.dimension {
             for j in 0..self.dimension {
@@ -134,12 +144,10 @@ impl TsplibInstance {
         }
     }
 
-    // Public method to get distance between two nodes
     pub fn distance(&self, i: usize, j: usize) -> i32 {
         self.distances[i][j]
     }
 
-    // Private method to calculate initial distances
     fn calculate_distance(&self, i: usize, j: usize) -> i32 {
         if i == j {
             return 0;
@@ -153,20 +161,60 @@ impl TsplibInstance {
                 let dx = x2 - x1;
                 let dy = y2 - y1;
                 let dist = (dx * dx + dy * dy).sqrt();
-                // Round to nearest integer as per TSPLIB standard
-                (dist + 0.5).floor() as i32
+                dist.round() as i32
             }
-            _ => panic!("Only EUC_2D is supported for this task")
+            _ => panic!("Only EUC_2D is supported for this task"),
         }
     }
 
-    // Get the dimension of the instance
     pub fn size(&self) -> usize {
         self.dimension
     }
+
+    pub fn precompute_nearest_neighbors(&mut self, k: usize) {
+        if k == 0 || k >= self.dimension {
+            eprintln!(
+                "Warning: Invalid k value ({}) for nearest neighbors. Must be 0 < k < dimension.",
+                k
+            );
+            self.nearest_neighbors = vec![Vec::new(); self.dimension];
+            return;
+        }
+
+        if !self.nearest_neighbors[0].is_empty() && self.nearest_neighbors[0].len() == k {
+            return;
+        }
+
+        self.nearest_neighbors = vec![Vec::with_capacity(k); self.dimension];
+
+        for i in 0..self.dimension {
+            let mut neighbors: Vec<_> = (0..self.dimension)
+                .filter(|&j| i != j)
+                .map(|j| (j, self.distances[i][j]))
+                .collect();
+
+            neighbors.sort_unstable_by_key(|&(_, dist)| dist);
+
+            self.nearest_neighbors[i] = neighbors.into_iter().take(k).map(|(idx, _)| idx).collect();
+        }
+    }
+
+    pub fn get_nearest_neighbors(&self, node_id: usize) -> &[usize] {
+        if self.nearest_neighbors.is_empty() || self.nearest_neighbors[0].is_empty() {
+            panic!(
+                "Nearest neighbors requested but not precomputed. Call precompute_nearest_neighbors first."
+            );
+        }
+        if node_id >= self.dimension {
+            panic!(
+                "Invalid node_id ({}) requested for nearest neighbors.",
+                node_id
+            );
+        }
+        &self.nearest_neighbors[node_id]
+    }
 }
 
-// Represents a solution with two cycles
 #[derive(Debug, Clone)]
 pub struct Solution {
     pub cycle1: Vec<usize>,
@@ -178,15 +226,16 @@ impl Solution {
         Self { cycle1, cycle2 }
     }
 
-    // Calculate total cost of the solution
     pub fn calculate_cost(&self, instance: &TsplibInstance) -> i32 {
         let cost1 = self.calculate_cycle_cost(&self.cycle1, instance);
         let cost2 = self.calculate_cycle_cost(&self.cycle2, instance);
         cost1 + cost2
     }
 
-    // Calculate cost of a single cycle
     fn calculate_cycle_cost(&self, cycle: &[usize], instance: &TsplibInstance) -> i32 {
+        if cycle.is_empty() {
+            return 0;
+        }
         let mut cost = 0;
         for i in 0..cycle.len() {
             let from = cycle[i];
@@ -196,33 +245,78 @@ impl Solution {
         cost
     }
 
-    // Validate if the solution is correct (all vertices used exactly once)
     pub fn is_valid(&self, instance: &TsplibInstance) -> bool {
         let mut used = vec![false; instance.size()];
-        
-        // Check cycle1
+        let mut count = 0;
+
         for &v in &self.cycle1 {
             if v >= instance.size() || used[v] {
                 return false;
             }
             used[v] = true;
+            count += 1;
         }
-        
-        // Check cycle2
+
         for &v in &self.cycle2 {
             if v >= instance.size() || used[v] {
                 return false;
             }
             used[v] = true;
+            count += 1;
         }
-        
-        // Check if all vertices are used
-        used.iter().all(|&x| x)
+
+        count == instance.size() && used.iter().all(|&x| x)
+    }
+
+    pub fn find_node(&self, node_id: usize) -> Option<(CycleId, usize)> {
+        if let Some(pos) = self.cycle1.iter().position(|&n| n == node_id) {
+            Some((CycleId::Cycle1, pos))
+        } else if let Some(pos) = self.cycle2.iter().position(|&n| n == node_id) {
+            Some((CycleId::Cycle2, pos))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_cycle(&self, cycle_id: CycleId) -> &Vec<usize> {
+        match cycle_id {
+            CycleId::Cycle1 => &self.cycle1,
+            CycleId::Cycle2 => &self.cycle2,
+        }
+    }
+
+    pub fn get_cycle_mut(&mut self, cycle_id: CycleId) -> &mut Vec<usize> {
+        match cycle_id {
+            CycleId::Cycle1 => &mut self.cycle1,
+            CycleId::Cycle2 => &mut self.cycle2,
+        }
+    }
+
+    pub fn has_edge(&self, a: usize, b: usize) -> Option<(CycleId, i8)> {
+        if let Some(direction) = self.check_edge_in_cycle(&self.cycle1, a, b) {
+            Some((CycleId::Cycle1, direction))
+        } else if let Some(direction) = self.check_edge_in_cycle(&self.cycle2, a, b) {
+            Some((CycleId::Cycle2, direction))
+        } else {
+            None
+        }
+    }
+
+    pub fn check_edge_in_cycle(&self, cycle: &[usize], a: usize, b: usize) -> Option<i8> {
+        let n = cycle.len();
+        if n < 2 {
+            return None;
+        }
+        for i in 0..n {
+            let u = cycle[i];
+            let v = cycle[(i + 1) % n];
+            if u == a && v == b {
+                return Some(1);
+            }
+            if u == b && v == a {
+                return Some(-1);
+            }
+        }
+        None
     }
 }
-
-fn deg_to_rad(deg: f64) -> f64 {
-    let pi = std::f64::consts::PI;
-    let deg = deg.round();
-    pi * (deg + 5.0 / 3.0) / 180.0
-} 
