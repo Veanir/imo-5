@@ -47,35 +47,6 @@ Do testów wykorzystano instancje \texttt{kroa200} i \texttt{krob200} z bibliote
 \section{Zaimplementowane algorytmy}
 W ramach zadania zaimplementowano i porównano następujące warianty algorytmu przeszukiwania lokalnego, startujące z losowych rozwiązań początkowych i wykorzystujące sąsiedztwo oparte na wymianie krawędzi (2-opt) zarówno wewnątrz tras (intra-route), jak i wymianie wierzchołków między trasami (inter-route):
 
-\subsection{Lokalne przeszukiwanie strome (Steepest Descent)}
-Standardowy algorytm przeszukiwania lokalnego w wersji stromej. W każdej iteracji przegląda wszystkie możliwe ruchy (wymiana krawędzi wewnątrz cykli oraz wymiana wierzchołków między cyklami), oblicza ich zysk (deltę) i wykonuje ruch o najlepszej (najbardziej ujemnej) delcie. Proces powtarza się, dopóki nie istnieje żaden ruch poprawiający rozwiązanie. Pseudokod przedstawiono w Algorytmie~\ref{alg:steepest}.
-
-\begin{algorithm}[H]
-\caption{Algorytm lokalnego przeszukiwania stromego (Steepest Descent)}
-\label{alg:steepest}
-\begin{algorithmic}[1]
-\State \texttt{current\_solution} $\leftarrow$ Generate Random Solution()
-\State \texttt{current\_cost} $\leftarrow$ Calculate Cost(\texttt{current\_solution})
-\Repeat
-    \State \texttt{best\_improving\_move} $\leftarrow$ \texttt{null}
-    \State \texttt{best\_delta} $\leftarrow$ 0
-    \State \texttt{all\_possible\_moves} $\leftarrow$ Generate All Edge Exchanges and Vertex Swaps(\texttt{current\_solution})
-    \For{each \texttt{move} in \texttt{all\_possible\_moves}}
-        \State \texttt{delta} $\leftarrow$ Calculate Move Delta(\texttt{move}, \texttt{current\_solution})
-        \If{\texttt{delta} < \texttt{best\_delta}}
-            \State \texttt{best\_delta} $\leftarrow$ \texttt{delta}
-            \State \texttt{best\_improving\_move} $\leftarrow$ \texttt{move}
-        \EndIf
-    \EndFor
-    \If{\texttt{best\_improving\_move} is not \texttt{null}}
-        \State Apply Move(\texttt{best\_improving\_move}, \texttt{current\_solution})
-        \State \texttt{current\_cost} $\leftarrow$ \texttt{current\_cost} + \texttt{best\_delta}
-    \EndIf
-\Until{\texttt{best\_improving\_move} is \texttt{null}}
-\State \Return \texttt{current\_solution}
-\end{algorithmic}
-\end{algorithm}
-
 \subsection{Lokalne przeszukiwanie z listą ruchów (Move List Steepest)}
 Usprawniona wersja algorytmu stromego, która wykorzystuje pamięć do przechowywania potencjalnych ruchów poprawiających. Zamiast przeszukiwać wszystkie ruchy w każdej iteracji, algorytm utrzymuje posortowaną listę ruchów (\texttt{move\_list}) i w każdej iteracji wybiera z niej najlepszy *ważny* ruch. Po wykonaniu ruchu lista jest aktualizowana: usuwa się wykonany ruch, ruchy zneaktualizowane przez zmianę oraz dodaje nowe ruchy wygenerowane tylko w sąsiedztwie zmodyfikowanych wierzchołków. Pozwala to potencjalnie zaoszczędzić czas obliczeń. Pseudokod przedstawiono w Algorytmie~\ref{alg:move_list}.
 
@@ -209,7 +180,28 @@ LS Candidate k=10 (Random Init) & 27.70 & 28.23 \\
 \end{table}
 
 \section{Wizualizacje}
-Poniżej przedstawiono wizualizacje najlepszych rozwiązań znalezionych przez poszczególne algorytmy lokalnego przeszukiwania dla obu instancji.
+Poniżej przedstawiono wizualizacje najlepszych rozwiązań znalezionych przez poszczególne algorytmy dla obu instancji.
+
+\begin{figure}[H]
+\begin{adjustwidth}{-1.5cm}{-1.5cm}
+    \centering
+    \begin{subfigure}[b]{0.6\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/kroa200_Weighted_2-Regret_Cycle.png}
+        \caption{Instancja kroa200}
+        \label{fig:weighted_regret_kroa200}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.6\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/krob200_Weighted_2-Regret_Cycle.png}
+        \caption{Instancja krob200}
+        \label{fig:weighted_regret_krob200}
+    \end{subfigure}
+    \caption{Wizualizacje najlepszych rozwiązań dla Ważony 2-żal}
+    \label{fig:weighted_regret}
+\end{adjustwidth}
+\end{figure}
 
 \begin{figure}[H]
 \begin{adjustwidth}{-1.5cm}{-1.5cm}
@@ -294,6 +286,6 @@ Podsumowując, usprawnienia algorytmu przeszukiwania lokalnego (Move List, Candi
 
 \section{Kod źródłowy}
 Pełny kod źródłowy implementacji wszystkich algorytmów jest dostępny w repozytorium GitHub:
-\url{https://github.com/Veanir/imo-1}
+\url{https://github.com/Veanir/imo-2}
 
 \end{document} 
