@@ -38,6 +38,7 @@ pub enum HeuristicAlgorithm {
     WeightedRegret,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct LocalSearch {
     variant: SearchVariant,
     neighborhood: NeighborhoodType,
